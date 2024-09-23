@@ -1,72 +1,78 @@
-import streamlit as st
-from openai import OpenAI
-import os
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+#from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.document_loaders import TextLoader
+from langchain_community.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings
 from dotenv import load_dotenv
-import base64
-
+import os
 load_dotenv()
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
-# Initialize the session state
-if "model" not in st.session_state:
-    st.session_state["model"] = "gpt-4o-mini-2024-07-18"
-if "client" not in st.session_state:
-    st.session_state["client"] = OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY")
+urls = [
+    "https://lilianweng.github.io/posts/2023-06-23-agent/",
+    "https://lilianweng.github.io/posts/2023-03-15-prompt-engineering/",
+    "https://lilianweng.github.io/posts/2023-10-25-adv-attack-llm/",
+]
+
+vectorstore=Chroma(persist_directory="C:/Users/NB/Desktop/venv",embedding_function=OpenAIEmbeddings(),collection_name="rag-chroma")
+retriever = vectorstore.as_retriever(
+    search_kwargs={"k":3}
+)
+### Retrieval Grader
+
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+# NOTE: you must use langchain-core >= 0.3 with Pydantic v2
+from pydantic import BaseModel, Field
+
+
+# Data model
+class GradeDocuments(BaseModel):
+    """檢索文件相關性檢查的二元分數。"""
+
+    binary_score: str = Field(
+        description="文件與問題相關：'是' 或 '否'"
     )
-if "messages" not in st.session_state:
-    st.session_state["messages"] = []
-if "images" not in st.session_state:
-    st.session_state["images"] = None
-# get response from the model
-def invoke() -> str:
-    messages = st.session_state["messages"]
-    if st.session_state["images"] is not None:
-        query = messages[-1]["content"]
-        base64_string=base64.b64encode(st.session_state["images"].getvalue()).decode('utf-8')
-        messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"{query}"},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_string}"
-                        }
-                    }
-                ]
-            }
-        )
-    stream = st.session_state["client"].chat.completions.create(
-        model=st.session_state["model"],
-        messages=messages,
-        stream=True
-    )
-    if st.session_state["images"] is not None:
-        st.session_state["messages"].pop()
-    return st.write_stream(stream)
 
-st.title("Chatbot")
 
-MODEL_OPTIONS = ["gpt-4o-mini-2024-07-18"]
-with st.sidebar:
-    st.session_state["model"] = st.selectbox("Select Model", MODEL_OPTIONS)
-    st.subheader(f"Model: {st.session_state['model']} is selected")
-    st.session_state["images"]=st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
-    
-# Display the chat history
-for message in st.session_state["messages"]:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-# Process the user input
-if query:=st.chat_input():
-    st.session_state["messages"].append({"role": "user", "content":query})
-    with st.chat_message("user"):
-        st.markdown(query)
-    # Get the response from the chatbot
-    with st.chat_message("assistant"):
-        response = invoke()
-        st.session_state["messages"].append(
-            {"role": "assistant", "content":response}
-            )
-        print(st.session_state["messages"])
+# LLM with function call
+llm = ChatOpenAI(model="gpt-4o-mini-2024-07-18", temperature=0)
+structured_llm_grader = llm.with_structured_output(GradeDocuments)
+
+# Prompt
+system = """你是一名評估文件與用戶問題相關性的評分員。
+不需要進行嚴格的測試，目的是過濾掉錯誤的檢索結果。
+如果文件包含與用戶問題相關的關鍵字或語義，請將其評為相關。
+使用二元分數「是」或「否」來表示文件是否與問題相關。"""
+grade_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", system),
+        ("human", "檢索到的文件：\n\n {document} \n\n 用戶問題：{question}"),
+    ]
+)
+retrieval_grader = grade_prompt | structured_llm_grader
+question = "今天午餐吃什麼?"
+docs = retriever.invoke(question)
+### Generate
+
+from langchain import hub
+from langchain_core.output_parsers import StrOutputParser
+
+# Prompt
+prompt = hub.pull("rlm/rag-prompt")
+print(type(prompt))
+llm = ChatOpenAI(model_name="gpt-4o-mini-2024-07-18", temperature=0)
+
+
+# # Post-processing
+# def format_docs(docs):
+#     return "\n\n".join(doc.page_content for doc in docs)
+
+
+# # Chain
+# rag_chain = prompt | llm | StrOutputParser()
+
+# # Run
+# generation = rag_chain.invoke({"context": docs, "question": question})
+# print(generation)
