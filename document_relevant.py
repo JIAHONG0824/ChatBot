@@ -7,7 +7,7 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 vectorstore=Chroma(
-    persist_directory="C:/Users/NB/Desktop/venv",
+    persist_directory="C:/Users/RB3083/Desktop/ChatBot/",
     embedding_function=OpenAIEmbeddings(),
     collection_name="rag-chroma"
 )
@@ -22,10 +22,8 @@ def relevant(query:str):
             messages=[
                 {
                     "role": "system", "content": """
-                    You are a grader assessing relevance of a retrieved document to a user question. \n 
-    It does not need to be a stringent test. The goal is to filter out erroneous retrievals. \n
-    If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. \n
-    Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question.
+                    Given a question, does the following document have exact information to answer the question?\n
+                    output yes or no
                     """
                 },
                 {
