@@ -12,68 +12,44 @@ load_dotenv()
 if "model" not in st.session_state:
     st.session_state["model"] = "gpt-4o-mini-2024-07-18"
 if "client" not in st.session_state:
-    st.session_state["client"] = OpenAI(
+    st.session_state["client"]= OpenAI(
         api_key=os.getenv("OPENAI_API_KEY")
     )
-if "messages" not in st.session_state:
-    st.session_state["messages"] = []
 if "images" not in st.session_state:
     st.session_state["images"] = None
 if "context" not in st.session_state:
     st.session_state["context"] = []
+if "retrieval" not in st.session_state:
+    st.session_state["retrieval"] = False
 # get response from the model
-def invoke() -> str:
-    history = st.session_state["messages"][:-1]
-    query = st.session_state["messages"][-1]["content"]
-    if st.session_state["images"] is not None:
-        query = query
-        base64_string=base64.b64encode(st.session_state["images"].getvalue()).decode('utf-8')
-        history.append(
+def invoke(query) -> str:
+    template = [
+        {
+            "role":"user",
+            "content": query
+        }
+    ]
+    if st.session_state["retrieval"]:
+        print("Retrieval is needed")
+        print(st.session_state["context"])
+        template=[
             {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"{query}"},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_string}"
-                        }
-                    }
-                ]
-            }
-        )
-        stream = st.session_state["client"].chat.completions.create(
-            model=st.session_state["model"],
-            messages=history,
-            stream=True
-        )
-        return st.write_stream(stream)
-    if st.session_state["context"]:
-        history.append(
-            {
-                "role": "system","content":"""
+                "role": "system",
+                "content": """
                 請根據以下的 context 內容回答使用者的問題。
                 如果 context 中包含與問題相關的資訊，請根據這些資訊提供答案；
                 如果 context 中沒有相關內容，請回答「沒有足夠的資訊，無法回答」。
                 請嚴格遵守這個指示。
-                """
-            }
-        )
-        history.append(
+                """ 
+            },
             {
                 "role": "user",
                 "content": f"context: {"\n".join(st.session_state['context'])}\n\n 使用者問題: {query}"
             }
-        )
-        stream = st.session_state["client"].chat.completions.create(
-        model=st.session_state["model"],
-        messages=history,
-        stream=True
-        )
-        return st.write_stream(stream)
+        ]
     stream = st.session_state["client"].chat.completions.create(
         model=st.session_state["model"],
-        messages=st.session_state["messages"],
+        messages=template,
         stream=True
     )
     return st.write_stream(stream)
@@ -86,24 +62,15 @@ with st.sidebar:
     st.subheader(f"Model: {st.session_state['model']} is selected")
     st.session_state["images"]=st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
     
-# Display the chat history
-for message in st.session_state["messages"]:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
 # Process the user input
 if query:=st.chat_input():
     with st.chat_message("user"):
         st.markdown(query)
     with st.chat_message("assistant"):
         with st.status("Thinking...",expanded=True):
-            st.session_state["messages"].append({"role": "user", "content":query})
             if is_retrieval_needed(query)== "需要":
-                print("需要外部檢索")
+                st.session_state["retrieval"]=True
                 st.session_state["context"]=relevant(query)
             else:
-                print("不需要外部檢索")
-                # Get the response from the chatbot
-            response = invoke()
-            st.session_state["messages"].append(
-                {"role": "assistant", "content":response}
-                )
+                st.session_state["retrieval"]=False
+            response = invoke(query)
