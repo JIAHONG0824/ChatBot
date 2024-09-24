@@ -4,7 +4,6 @@ import os
 from dotenv import load_dotenv
 import base64
 from document_relevant import relevant
-from retrieval import is_retrieval_needed
 
 load_dotenv()
 
@@ -22,7 +21,7 @@ if "images" not in st.session_state:
 if "context" not in st.session_state:
     st.session_state["context"] = []
 # get response from the model
-def invoke() -> str:
+def invoke(query:str) -> str:
     history = st.session_state["messages"][:-1]
     query = st.session_state["messages"][-1]["content"]
     if st.session_state["images"] is not None:
@@ -54,7 +53,7 @@ def invoke() -> str:
                 "role": "system","content":"""
                 請根據以下的 context 內容回答使用者的問題。
                 如果 context 中包含與問題相關的資訊，請根據這些資訊提供答案；
-                如果 context 中沒有相關內容，請回答「沒有足夠的資訊，無法回答」。
+                如果 context 中沒有相關內容，請正常回答問題，不要依賴 context 內容。
                 請嚴格遵守這個指示。
                 """
             }
@@ -94,16 +93,13 @@ for message in st.session_state["messages"]:
 if query:=st.chat_input():
     with st.chat_message("user"):
         st.markdown(query)
+    st.session_state["messages"].append({"role": "user", "content":query})
+    st.session_state["context"]=relevant(query)
+    # Get the response from the chatbot
     with st.chat_message("assistant"):
         with st.status("Thinking...",expanded=True):
-            st.session_state["messages"].append({"role": "user", "content":query})
-            if is_retrieval_needed(query)== "需要":
-                print("需要外部檢索")
-                st.session_state["context"]=relevant(query)
-            else:
-                print("不需要外部檢索")
-                # Get the response from the chatbot
-            response = invoke()
+            print(query)
+            response = invoke(query)
             st.session_state["messages"].append(
                 {"role": "assistant", "content":response}
                 )
