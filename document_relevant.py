@@ -7,7 +7,7 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 vectorstore=Chroma(
-    persist_directory="C:/Users/RB3083/Desktop/ChatBot/",
+    persist_directory="C:/Users/user no1/Desktop/ChatBot/",
     embedding_function=OpenAIEmbeddings(),
     collection_name="rag-chroma"
 )
